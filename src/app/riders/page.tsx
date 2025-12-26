@@ -1,8 +1,11 @@
 "use client";
 import React, { useState, useEffect } from 'react';
 import TableSkeleton from '@/components/ui/TableSkeleton';
+import RiderDetailModal from '@/components/ui/RiderDetailModal';
 import { Rider, RiderFormData } from './types';
 import { API_BASE_URL, getAuthToken } from '@/utils/env';
+import ConfirmationDialog from '@/components/ui/ConfirmationDialog';
+import { ChevronDownIcon } from '@heroicons/react/24/outline';
 
 export default function RidersPage() {
   const [riders, setRiders] = useState<Rider[]>([]);
@@ -10,9 +13,22 @@ export default function RidersPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState('all');
+  const [activeTab, setActiveTab] = useState<'all' | 'approved' | 'pending' | 'on_hold' | 'rejected'>('all');
   const [sortBy, setSortBy] = useState('name');
   
+  // Status change controls
+  const [statusDropdownOpen, setStatusDropdownOpen] = useState<string | null>(null);
+  const [newStatus, setNewStatus] = useState<'approved' | 'pending' | 'on_hold' | 'rejected'>('approved');
+  const [isStatusModalOpen, setIsStatusModalOpen] = useState(false);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+
+  const statusOptions = [
+    { value: 'approved', label: 'Approved' },
+    { value: 'pending', label: 'Pending' },
+    { value: 'on_hold', label: 'On Hold' },
+    { value: 'rejected', label: 'Rejected' }
+  ];
+
   // Modal states
   const [showModal, setShowModal] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
@@ -21,7 +37,7 @@ export default function RidersPage() {
   const [isEditing, setIsEditing] = useState(false);
   // Detail modal
   const [isDetailOpen, setIsDetailOpen] = useState(false);
-  const [detailRider, setDetailRider] = useState<any>(null);
+  const [selectedRiderId, setSelectedRiderId] = useState<string | null>(null);
   
   // Form data
   const [formData, setFormData] = useState<RiderFormData>({
@@ -30,7 +46,7 @@ export default function RidersPage() {
     email: '',
     vehicle_type: '',
     license_number: '',
-    status: 'available',
+    status: 'approved',
     is_blocked: false
   });
   const [initialFormData, setInitialFormData] = useState<RiderFormData | null>(null);
@@ -41,7 +57,21 @@ export default function RidersPage() {
 
   useEffect(() => {
     filterAndSortRiders();
-  }, [riders, searchTerm, statusFilter, sortBy]);
+  }, [riders, searchTerm, activeTab, sortBy]);
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (statusDropdownOpen !== null) {
+        const target = event.target as HTMLElement;
+        if (!target.closest('.status-dropdown-container')) {
+          setStatusDropdownOpen(null);
+        }
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [statusDropdownOpen]);
 
   const fetchRiders = async () => {
     setIsLoading(true);
@@ -96,7 +126,11 @@ export default function RidersPage() {
                            String(rider.phone_number || '').includes(searchTerm) ||
                            (rider.email || '').toLowerCase().includes(searchLower);
       
-      const matchesStatus = statusFilter === 'all' || rider.status === statusFilter;
+      let matchesStatus = true;
+      if (activeTab === 'approved') matchesStatus = rider.status === 'approved';
+      else if (activeTab === 'pending') matchesStatus = rider.status === 'pending';
+      else if (activeTab === 'on_hold') matchesStatus = rider.status === 'on_hold';
+      else if (activeTab === 'rejected') matchesStatus = rider.status === 'rejected';
       
       return matchesSearch && matchesStatus;
     });
@@ -121,6 +155,61 @@ export default function RidersPage() {
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
+  };
+
+  const getStatusColorClass = (status: string): string => {
+    switch (status) {
+      case 'approved':
+      case 'available': // map legacy/operational to green
+        return 'bg-green-100 text-green-800';
+      case 'pending':
+        return 'bg-gray-100 text-gray-800';
+      case 'on_hold':
+      case 'on_delivery':
+        return 'bg-yellow-100 text-yellow-800';
+      case 'rejected':
+      case 'offline':
+        return 'bg-red-100 text-red-800';
+      default:
+        return 'bg-gray-100 text-gray-800';
+    }
+  };
+
+  const handleStatusClick = (rider: Rider, status: 'approved' | 'pending' | 'on_hold' | 'rejected'): void => {
+    setSelectedRider(rider);
+    setNewStatus(status);
+    setIsStatusModalOpen(true);
+  };
+
+  const handleStatusConfirm = async (): Promise<void> => {
+    if (selectedRider) {
+      try {
+        const token = getAuthToken();
+        if (!token) throw new Error('Authentication token not found');
+        const response = await fetch(`${API_BASE_URL}/api/admin/riders/${selectedRider.rider_id}`, {
+          method: 'PUT',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ status: newStatus })
+        });
+        const data = await response.json();
+        if (data.success) {
+          await fetchRiders();
+          setSuccessMessage('Status updated successfully');
+        } else {
+          throw new Error(data.message || 'Failed to update rider status');
+        }
+      } catch (err: any) {
+        console.error('Error updating rider status:', err);
+        setError(err.message || 'An error occurred');
+      } finally {
+        setIsStatusModalOpen(false);
+        setStatusDropdownOpen(null);
+        setSelectedRider(null);
+      }
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -307,14 +396,48 @@ export default function RidersPage() {
         </div>
       </div>
 
+      {successMessage && (
+        <div className="flex items-start justify-between bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded">
+          <p className="text-sm">{successMessage}</p>
+          <button
+            type="button"
+            onClick={() => setSuccessMessage(null)}
+            className="ml-4 text-green-700 hover:text-green-900"
+            aria-label="Dismiss"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
       {error && (
         <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded">
           {error}
         </div>
       )}
 
+      {/* Tabs */}
+      <div className="border-b border-gray-200">
+        <nav className="-mb-px flex space-x-8" aria-label="Tabs">
+          {['all', 'approved', 'pending', 'on_hold', 'rejected'].map((tab) => (
+            <button
+              key={tab}
+              onClick={() => setActiveTab(tab as any)}
+              className={`${
+                activeTab === tab
+                  ? 'border-primary-500 text-primary-600'
+                  : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700'
+              }
+                whitespace-nowrap border-b-2 py-4 px-1 text-sm font-medium capitalize`}
+            >
+              {tab.replace('-', ' ')}
+            </button>
+          ))}
+        </nav>
+      </div>
+
       {/* Search and filters */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mt-4">
         <div className="relative max-w-xs w-full">
           <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
             <svg className="h-5 w-5 text-gray-400" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
@@ -331,16 +454,6 @@ export default function RidersPage() {
         </div>
         <div className="flex flex-col sm:flex-row gap-4">
           <select 
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            className="rounded-md border-0 py-2 pl-3 pr-10 text-gray-900 ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-primary-600 sm:text-sm"
-          >
-            <option value="all">All Riders</option>
-            <option value="available">Available</option>
-            <option value="on_delivery">On Delivery</option>
-            <option value="offline">Offline</option>
-          </select>
-          <select 
             value={sortBy}
             onChange={(e) => setSortBy(e.target.value)}
             className="rounded-md border-0 py-2 pl-3 pr-10 text-gray-900 ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-primary-600 sm:text-sm"
@@ -353,7 +466,7 @@ export default function RidersPage() {
       </div>
 
       {/* Riders table */}
-      <div className="overflow-visible shadow ring-1 ring-black ring-opacity-5 sm:rounded-lg">
+      <div className="overflow-visible shadow ring-1 ring-black ring-opacity-5 sm:rounded-lg mt-4">
         <table className="min-w-full divide-y divide-gray-300">
           <thead className="bg-gray-50">
             <tr>
@@ -373,26 +486,10 @@ export default function RidersPage() {
             ) : filteredRiders.map((rider) => (
               <tr
                 key={rider.rider_id}
-                onClick={async (e) => {
+                onClick={(e) => {
                   if ((e.target as HTMLElement).closest('.action-cell')) return;
-                  try {
-                    const token = getAuthToken();
-                    const res = await fetch(`${API_BASE_URL}/api/admin/riders/${rider.rider_id}`, {
-                      method: 'GET',
-                      headers: {
-                        'Authorization': `Bearer ${token}`,
-                        'Content-Type': 'application/json'
-                      }
-                    });
-                    const data = await res.json();
-                    const rd = data.success ? (data.data?.rider || data.data || rider) : rider;
-                    setDetailRider(rd);
-                    setIsDetailOpen(true);
-                  } catch (err) {
-                    console.error('Failed to get rider details', err);
-                    setDetailRider(rider);
-                    setIsDetailOpen(true);
-                  }
+                  setSelectedRiderId(rider.rider_id);
+                  setIsDetailOpen(true);
                 }}
                 className="cursor-pointer hover:bg-gray-50"
               >
@@ -400,41 +497,80 @@ export default function RidersPage() {
                 <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">{rider.phone_number}</td>
                 <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">{rider.vehicle_type}</td>
                 <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">{Number.isFinite(rider.rating) ? rider.rating.toFixed(1) : 'N/A'}</td>
-                <td className="whitespace-nowrap px-3 py-4 text-sm">
-                  <span className={`inline-flex rounded-full px-2 text-xs font-semibold leading-5 ${
-                    rider.status === 'available' ? 'bg-green-100 text-green-800' : 
-                    rider.status === 'on_delivery' ? 'bg-blue-100 text-blue-800' : 
-                    'bg-gray-100 text-gray-800'
-                  }`}>
-                    {rider.status === 'available' ? 'Available' : 
-                     rider.status === 'on_delivery' ? 'On Delivery' : 'Offline'}
-                  </span>
+                <td className="relative whitespace-nowrap px-3 py-4 text-sm status-dropdown-container">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setStatusDropdownOpen(statusDropdownOpen === rider.rider_id ? null : rider.rider_id);
+                    }}
+                    className={`inline-flex items-center rounded-full px-3 py-0.5 text-sm font-medium ${getStatusColorClass(rider.status)}`}
+                  >
+                    {rider.status.replace(/_/g, ' ').replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                    <ChevronDownIcon className="ml-1 h-4 w-4" />
+                  </button>
+                  {statusDropdownOpen === rider.rider_id && (
+                    <div className="absolute left-0 top-full z-50 mt-1 w-40 rounded-md bg-white shadow-lg ring-1 ring-black ring-opacity-5">
+                      <div className="py-1" role="menu">
+                        {statusOptions.map((option) => (
+                          <button
+                            key={option.value}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleStatusClick(rider, option.value as any);
+                            }}
+                            className={`block w-full px-4 py-2 text-left text-sm ${option.value === rider.status ? 'bg-gray-100' : 'hover:bg-gray-50'}`}
+                            role="menuitem"
+                          >
+                            {option.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </td>
-            <td className="relative whitespace-nowrap py-4 pl-3 pr-4 text-right text-sm font-medium sm:pr-6 action-cell">
-              <button 
-                onClick={(e) => { e.stopPropagation(); handleEdit(rider); }} 
-                className="text-primary-600 hover:text-primary-900 mr-4"
-              >
-                Edit
-              </button>
-              <button 
-                onClick={(e) => { e.stopPropagation(); handleBlockClick(rider); }} 
-                className={`${rider.is_blocked ? 'text-green-600 hover:text-green-900' : 'text-red-600 hover:text-red-900'} mr-4`}
-              >
-                {rider.is_blocked ? 'Unblock' : 'Block'}
-              </button>
-              <button 
-                onClick={(e) => { e.stopPropagation(); handleDeleteClick(rider); }} 
-                className="text-red-600 hover:text-red-900"
-              >
-                Delete
-              </button>
-            </td>
-          </tr>
-        ))}
+                <td className="relative whitespace-nowrap py-4 pl-3 pr-4 text-right text-sm font-medium sm:pr-6 action-cell">
+                  <div className="flex items-center justify-end gap-2">
+                    {/* Status change now handled via Status pill dropdown in Status column */}
+                    <button 
+                      onClick={(e) => { e.stopPropagation(); handleEdit(rider); }} 
+                      className="text-primary-600 hover:text-primary-900"
+                    >
+                      Edit
+                    </button>
+                    <button 
+                      onClick={(e) => { e.stopPropagation(); handleBlockClick(rider); }} 
+                      className={`${rider.is_blocked ? 'text-green-600 hover:text-green-900' : 'text-red-600 hover:text-red-900'}`}
+                    >
+                      {rider.is_blocked ? 'Unblock' : 'Block'}
+                    </button>
+                    <button 
+                      onClick={(e) => { e.stopPropagation(); handleDeleteClick(rider); }} 
+                      className="text-red-600 hover:text-red-900"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            ))}
           </tbody>
         </table>
       </div>
+
+      {/* Status Change Confirmation Dialog */}
+      <ConfirmationDialog
+        isOpen={isStatusModalOpen}
+        title="Confirm Status Change"
+        message={
+          <p>
+            Are you sure you want to change the status of rider <span className="font-semibold">{selectedRider?.full_name}</span> to <span className="font-semibold">{newStatus.replace(/-/g, ' ').replace('_', ' ').charAt(0).toUpperCase() + newStatus.replace(/-/g, ' ').replace('_', ' ').slice(1)}</span>?
+          </p>
+        }
+        confirmText="Change Status"
+        confirmButtonClass="bg-blue-600 hover:bg-blue-700 focus:ring-blue-500"
+        onConfirm={handleStatusConfirm}
+        onCancel={() => setIsStatusModalOpen(false)}
+      />
 
       {/* Add/Edit Rider Modal */}
       {showModal && (
@@ -541,30 +677,11 @@ export default function RidersPage() {
       )}
 
       {/* Rider Detail Modal */}
-      {isDetailOpen && detailRider && (
-        <div className="fixed inset-0 bg-black bg-opacity-30 backdrop-blur-sm z-50 flex items-center justify-center" onClick={() => setIsDetailOpen(false)}>
-          <div className="bg-white rounded-lg shadow-xl max-w-lg w-full p-6" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-start justify-between">
-              <h3 className="text-lg font-semibold text-gray-900">Rider Details</h3>
-              <button onClick={() => setIsDetailOpen(false)} className="text-gray-500 hover:text-gray-700">✕</button>
-            </div>
-            <div className="mt-4 space-y-2 text-sm text-gray-700">
-              <p><span className="font-medium">ID:</span> {detailRider.rider_id}</p>
-              <p><span className="font-medium">Name:</span> {detailRider.full_name}</p>
-              <p><span className="font-medium">Email:</span> {detailRider.email}</p>
-              <p><span className="font-medium">Phone:</span> {detailRider.phone || detailRider.phone_number}</p>
-              <p><span className="font-medium">Vehicle:</span> {detailRider.vehicle_type}</p>
-              <p><span className="font-medium">Status:</span> {detailRider.status}</p>
-              {typeof detailRider.rating !== 'undefined' && (
-                <p><span className="font-medium">Rating:</span> {Number(detailRider.rating)?.toFixed(1)}</p>
-              )}
-            </div>
-            <div className="mt-6 text-right">
-              <button onClick={() => setIsDetailOpen(false)} className="px-4 py-2 rounded-md bg-gray-100 text-gray-800 hover:bg-gray-200">Close</button>
-            </div>
-          </div>
-        </div>
-      )}
+      <RiderDetailModal
+        isOpen={isDetailOpen}
+        riderId={selectedRiderId}
+        onClose={() => setIsDetailOpen(false)}
+      />
 
       {/* Delete Confirmation Dialog */}
       {showDeleteDialog && (

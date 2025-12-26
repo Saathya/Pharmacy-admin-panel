@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { API_BASE_URL, getAuthToken } from '@/utils/env';
 import ConfirmationDialog from '@/components/ui/ConfirmationDialog';
+import ProductDetailModal from '@/components/ui/ProductDetailModal';
 
 interface Product {
   product_id: string;
@@ -26,7 +27,7 @@ export default function ProductsPage() {
 
   // Detail modal state
   const [isDetailOpen, setIsDetailOpen] = useState(false);
-  const [detailProduct, setDetailProduct] = useState<any>(null);
+  const [selectedProductId, setSelectedProductId] = useState<string | null>(null);
 
   // Edit modal state
   const [isEditOpen, setIsEditOpen] = useState(false);
@@ -126,27 +127,9 @@ export default function ProductsPage() {
     return stock < 20 ? 'Low Stock' : 'Active';
   };
 
-  const openProductDetail = async (product: Product) => {
-    try {
-      const token = getAuthToken();
-      if (!token) throw new Error('Authentication token not found');
-      const res = await fetch(`${API_BASE_URL}/api/admin/products/${product.product_id}`, {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        }
-      });
-      const data = await res.json();
-      const p = data.success ? (data.data?.product || data.data || product) : product;
-      setDetailProduct(p);
-      setIsDetailOpen(true);
-    } catch (e) {
-      console.error('Failed to load product details', e);
-      // Fallback to current row data
-      setDetailProduct(product);
-      setIsDetailOpen(true);
-    }
+  const openProductDetail = (productId: string) => {
+    setSelectedProductId(productId);
+    setIsDetailOpen(true);
   };
 
   const openEditProduct = async (productId: string) => {
@@ -334,7 +317,7 @@ export default function ProductsPage() {
                     key={product.product_id}
                     onClick={(e) => {
                       if ((e.target as HTMLElement).closest('.action-cell')) return;
-                      openProductDetail(product);
+                      openProductDetail(product.product_id);
                     }}
                     className="cursor-pointer hover:bg-gray-50"
                   >
@@ -450,27 +433,11 @@ export default function ProductsPage() {
         </div>
       )}
       {/* Product Detail Modal */}
-      {isDetailOpen && detailProduct && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-30 backdrop-blur-sm" onClick={() => setIsDetailOpen(false)}>
-          <div className="bg-white rounded-lg shadow-xl max-w-lg w-full p-6" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-start justify-between">
-              <h3 className="text-lg font-semibold text-gray-900">Product Details</h3>
-              <button onClick={() => setIsDetailOpen(false)} className="text-gray-500 hover:text-gray-700">✕</button>
-            </div>
-            <div className="mt-4 space-y-2 text-sm text-gray-700">
-              <p><span className="font-medium">ID:</span> {detailProduct.product_id}</p>
-              <p><span className="font-medium">Name:</span> {detailProduct.name}</p>
-              <p><span className="font-medium">Price:</span> ₵{Number(detailProduct.price)?.toFixed(2)}</p>
-              <p><span className="font-medium">Vendor:</span> {detailProduct.vendor_id || '—'}</p>
-              {detailProduct.category && <p><span className="font-medium">Category:</span> {detailProduct.category}</p>}
-              {typeof detailProduct.stock_quantity !== 'undefined' && <p><span className="font-medium">Stock:</span> {detailProduct.stock_quantity}</p>}
-            </div>
-            <div className="mt-6 text-right">
-              <button onClick={() => setIsDetailOpen(false)} className="px-4 py-2 rounded-md bg-gray-100 text-gray-800 hover:bg-gray-200">Close</button>
-            </div>
-          </div>
-        </div>
-      )}
+      <ProductDetailModal
+        isOpen={isDetailOpen}
+        productId={selectedProductId}
+        onClose={() => setIsDetailOpen(false)}
+      />
 
       {/* Edit Product Modal */}
       {isEditOpen && editForm && (

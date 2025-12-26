@@ -5,6 +5,7 @@ import { PencilIcon, ChevronDownIcon } from '@heroicons/react/24/outline';
 import Link from 'next/link';
 import { Vendor } from '../types';
 import { API_BASE_URL, getAuthToken } from '@/utils/env';
+import VendorDetailModal from '@/components/ui/VendorDetailModal';
 import ConfirmationDialog from '@/components/ui/ConfirmationDialog';
 import TableSkeleton from '@/components/ui/TableSkeleton';
 
@@ -18,14 +19,15 @@ export default function OnHoldVendors() {
   // Status change controls
   const [statusDropdownOpen, setStatusDropdownOpen] = useState<string | null>(null);
   const [selectedVendor, setSelectedVendor] = useState<Vendor | null>(null);
-  const [newStatus, setNewStatus] = useState<'approved' | 'pending' | 'on_hold' | 'rejected'>('on_hold');
+  const [selectedVendorId, setSelectedVendorId] = useState<string | null>(null);
+  const [newStatus, setNewStatus] = useState<'approved' | 'pending' | 'on_hold' | 'hold' | 'rejected'>('on_hold');
   const [isDetailOpen, setIsDetailOpen] = useState(false);
   const [isStatusModalOpen, setIsStatusModalOpen] = useState(false);
 
   const statusOptions = [
     { value: 'approved', label: 'Approved' },
     { value: 'pending', label: 'Pending' },
-    { value: 'on_hold', label: 'On Hold' },
+    { value: 'hold', label: 'On Hold' },
     { value: 'rejected', label: 'Rejected' },
   ];
 
@@ -82,7 +84,7 @@ export default function OnHoldVendors() {
           is_blocked: vendor.is_blocked || false
         }));
         
-        const onHoldVendors = allVendors.filter((v: Vendor) => v.status === 'on_hold');
+        const onHoldVendors = allVendors.filter((v: Vendor) => v.status === 'on_hold' || v.status === 'hold');
         setVendors(onHoldVendors);
       } else {
         throw new Error(data.message || 'Failed to fetch vendors');
@@ -119,6 +121,7 @@ export default function OnHoldVendors() {
       case 'pending':
         return 'bg-gray-100 text-gray-800';
       case 'on_hold':
+      case 'hold':
         return 'bg-yellow-100 text-yellow-800';
       case 'rejected':
         return 'bg-red-100 text-red-800';
@@ -127,7 +130,7 @@ export default function OnHoldVendors() {
     }
   };
 
-  const handleStatusClick = (vendor: Vendor, status: 'approved' | 'pending' | 'on_hold' | 'rejected'): void => {
+  const handleStatusClick = (vendor: Vendor, status: 'approved' | 'pending' | 'on_hold' | 'hold' | 'rejected'): void => {
     setSelectedVendor(vendor);
     setNewStatus(status);
     setIsStatusModalOpen(true);
@@ -213,7 +216,7 @@ export default function OnHoldVendors() {
                         key={vendor.vendor_id}
                         onClick={(e) => {
                           if ((e.target as HTMLElement).closest('.action-cell')) return;
-                          setSelectedVendor(vendor);
+                          setSelectedVendorId(vendor.vendor_id);
                           setIsDetailOpen(true);
                         }}
                         className="cursor-pointer hover:bg-gray-50"
@@ -299,25 +302,11 @@ export default function OnHoldVendors() {
       />
 
       {/* Vendor Detail Modal */}
-      {isDetailOpen && selectedVendor && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-          <div className="bg-white w-full max-w-md rounded-lg shadow-lg p-6">
-            <h3 className="text-lg font-semibold">Vendor Details</h3>
-            <div className="mt-4 space-y-2 text-sm">
-              <div><span className="text-gray-500">Name:</span> {selectedVendor.full_name}</div>
-              <div><span className="text-gray-500">Email:</span> {selectedVendor.email}</div>
-              <div><span className="text-gray-500">Phone:</span> {selectedVendor.phone_number}</div>
-              <div><span className="text-gray-500">Vendor ID:</span> {selectedVendor.vendor_id}</div>
-              <div><span className="text-gray-500">Status:</span> {selectedVendor.status}</div>
-              <div><span className="text-gray-500">Business:</span> {selectedVendor.business_name}</div>
-              <div><span className="text-gray-500">Products:</span> {selectedVendor.total_products}</div>
-            </div>
-            <div className="mt-6 flex justify-end gap-2">
-              <button className="px-3 py-2 text-sm border rounded" onClick={() => setIsDetailOpen(false)}>Close</button>
-            </div>
-          </div>
-        </div>
-      )}
+      <VendorDetailModal
+        isOpen={isDetailOpen}
+        vendorId={selectedVendorId}
+        onClose={() => setIsDetailOpen(false)}
+      />
 
       {vendors.length > 0 && (
         <div className="flex items-center justify-between border-t border-gray-200 bg-white px-4 py-3 sm:px-6">
@@ -371,4 +360,5 @@ export default function OnHoldVendors() {
     </div>
   );
 }
+
 

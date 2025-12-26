@@ -7,6 +7,7 @@ import {
 } from '@heroicons/react/24/outline';
 import Link from 'next/link';
 import { Vendor } from '../types';
+import VendorDetailModal from '@/components/ui/VendorDetailModal';
 
 const BASE_URL = 'https://api.oraglan.com';
 
@@ -46,6 +47,8 @@ export default function SuspendedVendors() {
   const [vendors, setVendors] = useState<Vendor[]>(initialVendors);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isDetailOpen, setIsDetailOpen] = useState(false);
+  const [selectedVendorId, setSelectedVendorId] = useState<string | null>(null);
 
   useEffect(() => {
     fetchSuspendedVendors();
@@ -131,7 +134,15 @@ export default function SuspendedVendors() {
                 </thead>
                 <tbody className="divide-y divide-gray-200 bg-white">
                   {vendors.map((vendor) => (
-                    <tr key={vendor.vendor_id}>
+                    <tr
+                      key={vendor.vendor_id}
+                      onClick={(e) => {
+                        if ((e.target as HTMLElement).closest('.action-cell')) return;
+                        setSelectedVendorId(vendor.vendor_id);
+                        setIsDetailOpen(true);
+                      }}
+                      className="cursor-pointer hover:bg-gray-50"
+                    >
                       <td className="whitespace-nowrap py-4 pl-4 pr-3 text-sm font-medium text-gray-900 sm:pl-6">
                         {vendor.vendor_id}
                       </td>
@@ -158,7 +169,7 @@ export default function SuspendedVendors() {
                       <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
                         {vendor.total_products}
                       </td>
-                      <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+                      <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500 action-cell">
                         <div className="flex items-center space-x-4">
                           {/* Status Badge */}
                           <span className={`inline-flex items-center rounded-full px-3 py-0.5 text-sm font-medium ${
@@ -184,6 +195,11 @@ export default function SuspendedVendors() {
           </div>
         </div>
       </div>
+      <VendorDetailModal
+        isOpen={isDetailOpen}
+        vendorId={selectedVendorId}
+        onClose={() => setIsDetailOpen(false)}
+      />
     </div>
   );
 }
