@@ -11,7 +11,7 @@ const nextConfig = {
     ignoreBuildErrors: true,
   },
   // Static site generation for shared hosting
-  output: 'export', // Re-enabled for deployment
+  //output: 'export', // Re-enabled for deployment
   // Set this if your site is not hosted at the root of the domain
   // basePath: '',
   // This helps with routing on shared hosting
